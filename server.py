@@ -77,6 +77,13 @@ def init_db():
                 PRIMARY KEY (user_id, word_id),
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS mnemonic_cache (
+                english TEXT PRIMARY KEY,
+                chinese TEXT,
+                mnemonic TEXT NOT NULL,
+                model TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            );
             """
         )
 
@@ -298,6 +305,18 @@ def api_mnemonic():
     if not english:
         return jsonify(error="缺少 english"), 400
 
+    # ---------- 1. 查本地缓存 ----------
+    db = get_db()
+    row = db.execute(
+        "SELECT mnemonic, model FROM mnemonic_cache WHERE english = ?",
+        (english.lower(),),
+    ).fetchone()
+    if row:
+        app.logger.info("mnemonic cache HIT: %s", english)
+        return jsonify(text=row["mnemonic"], model=row["model"] or "", cached=True)
+
+    # ---------- 2. 缓存未命中，调千问 API ----------
+    app.logger.info("mnemonic cache MISS: %s -> calling Qwen", english)
     system_prompt = (
         "你是一名有趣的英语老师，擅长用生动易记的方式帮助初中生记单词。"
         "回答请控制在 120 字以内，使用中文，结构如下：\n"
@@ -338,7 +357,21 @@ def api_mnemonic():
         text = payload["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError):
         return jsonify(error="千问返回格式异常", raw=payload), 502
-    return jsonify(text=text.strip(), model=QWEN_MODEL)
+
+    text = text.strip()
+
+    # ---------- 3. 存入本地缓存 ----------
+    try:
+        db.execute(
+            "INSERT OR REPLACE INTO mnemonic_cache (english, chinese, mnemonic, model) VALUES (?, ?, ?, ?)",
+            (english.lower(), chinese, text, QWEN_MODEL),
+        )
+        db.commit()
+        app.logger.info("mnemonic cached: %s", english)
+    except Exception as exc:  # noqa: BLE001
+        app.logger.warning("mnemonic cache write failed: %s", exc)
+
+    return jsonify(text=text, model=QWEN_MODEL, cached=False)
 
 
 # ================= 图片搜索（Pixabay 主 / Wikipedia 兜底） =================

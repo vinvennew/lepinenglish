@@ -1020,7 +1020,7 @@
             btn.disabled = true;
             btn.innerHTML = '⏳ 生成中...';
             placeholder.classList.remove('hidden');
-            placeholder.textContent = '🤖 千问正在思考，请稍候（约 3-10 秒）...';
+            placeholder.textContent = '🤖 正在加载 AI 助记...';
             content.classList.add('hidden');
             try {
                 const data = await api('/api/mnemonic', {
@@ -1030,6 +1030,9 @@
                 content.textContent = data.text || '';
                 content.classList.remove('hidden');
                 placeholder.classList.add('hidden');
+                if (data.cached) {
+                    console.log('[AI] 助记缓存命中:', word.english);
+                }
             } catch (err) {
                 placeholder.textContent = '❌ 生成失败：' + err.message;
             } finally {
