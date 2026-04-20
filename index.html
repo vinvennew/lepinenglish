@@ -9,25 +9,22 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
         body { font-family: 'Noto Sans SC', system-ui, sans-serif; }
-        
+
         .chunk {
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            touch-action: manipulation;
         }
         .chunk:hover {
-            transform: scale(1.1) rotate(2deg);
-            box-shadow: 0 10px 15px -3px rgb(59 130 246);
+            transform: scale(1.08) rotate(1.5deg);
+            box-shadow: 0 10px 15px -3px rgb(59 130 246 / 0.5);
         }
-        .dropzone {
-            transition: all 0.3s ease;
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-10px); }
+            40%, 80% { transform: translateX(10px); }
         }
-        .dropzone.active {
-            background-color: #dbeafe;
-            border-color: #3b82f6;
-        }
-        
-        .word-card {
-            transition: all 0.3s ease;
-        }
+
+        .word-card { transition: all 0.3s ease; }
         .status-proficient { background: linear-gradient(90deg, #10b981, #34d399); }
         .status-not { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
         .status-forgot { background: linear-gradient(90deg, #ef4444, #f87171); }
@@ -36,10 +33,63 @@
             position: fixed;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
             pointer-events: none;
             z-index: 9999;
+        }
+
+        /* 中文意思突出显示卡片 */
+        .chinese-card {
+            position: relative;
+            background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 60%, #fed7aa 100%);
+            border: 3px solid #f59e0b;
+            border-radius: 1.5rem;
+            padding: 1.25rem 1.25rem 1rem;
+            box-shadow: 0 10px 30px -8px rgba(245, 158, 11, 0.35);
+            text-align: center;
+        }
+        .chinese-card::before {
+            content: '🀄 中文意思';
+            position: absolute;
+            top: -14px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #f59e0b;
+            color: #fff;
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 4px 16px;
+            border-radius: 999px;
+            letter-spacing: 2px;
+            white-space: nowrap;
+        }
+
+        /* 测试模式按钮 */
+        .mode-btn, .opt-btn {
+            transition: all 0.2s ease;
+            font-weight: 500;
+        }
+        .mode-btn.selected, .opt-btn.selected {
+            background: #3b82f6 !important;
+            color: #fff !important;
+            border-color: #3b82f6 !important;
+            box-shadow: 0 4px 10px -2px rgba(59,130,246,0.4);
+        }
+
+        /* 输入框错误动画 */
+        .typing-error {
+            border-color: #ef4444 !important;
+            background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%) !important;
+            animation: shake 0.5s;
+        }
+
+        /* 响应式优化 */
+        @media (max-width: 768px) {
+            h1 { font-size: 1.25rem !important; line-height: 1.3; }
+            .chunk { padding: 0.55rem 1rem !important; font-size: 1rem !important; }
+            #typing-input { font-size: 1.35rem !important; padding: 0.9rem !important; }
+        }
+        @media (max-width: 480px) {
+            .tab-button { font-size: 0.85rem !important; padding: 0.75rem 0.3rem !important; }
         }
     </style>
 </head>
@@ -56,14 +106,15 @@
                 </div>
             </div>
             <div class="flex items-center gap-3">
-                <div onclick="resetData()" 
-                     class="cursor-pointer px-4 py-2 text-sm bg-white hover:bg-red-50 border border-red-200 text-red-600 rounded-2xl flex items-center gap-2">
-                    <span>🔄</span>
-                    <span>重置数据</span>
+                <div id="user-bar" class="hidden text-sm text-gray-600 flex items-center gap-3">
+                    <span>👤 <span id="user-name" class="font-semibold text-blue-800"></span></span>
+                    <span class="text-gray-400">|</span>
+                    <span id="user-wordbook" class="text-gray-500"></span>
+                    <button onclick="doLogout()" class="px-3 py-1.5 text-sm bg-white hover:bg-gray-100 border border-gray-300 rounded-2xl">退出</button>
                 </div>
-                <div class="text-sm text-gray-500 flex items-center gap-2">
+                <div id="cloud-indicator" class="hidden text-sm text-gray-500 items-center gap-2">
                     <div class="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-                    数据本地保存
+                    数据云端保存
                 </div>
             </div>
         </div>
@@ -89,98 +140,150 @@
 
         <!-- 引导学习频道（默认首页） -->
         <div id="page-0" class="tab-page mt-8">
-            <div class="bg-white rounded-3xl shadow-2xl p-8 max-w-3xl mx-auto">
-                <div class="flex justify-between mb-8">
+            <div class="bg-white rounded-3xl shadow-2xl p-4 md:p-8 max-w-3xl mx-auto">
+                <div class="flex flex-col md:flex-row md:justify-between gap-3 md:gap-0 mb-6 md:mb-8">
                     <div>
-                        <h2 class="text-3xl font-bold text-blue-900">自然拼读引导学习</h2>
-                        <p class="text-blue-600">智能监测 · 自动标记不熟练单词</p>
+                        <h2 class="text-2xl md:text-3xl font-bold text-blue-900">自然拼读引导学习</h2>
+                        <p class="text-blue-600 text-sm md:text-base">智能监测 · 自动标记不熟练单词</p>
                     </div>
                     <div onclick="toggleReviewMode()" id="review-mode-btn"
-                         class="cursor-pointer px-6 h-10 bg-amber-100 hover:bg-amber-200 text-amber-700 rounded-2xl flex items-center text-sm font-medium">
+                         class="cursor-pointer self-start md:self-auto px-5 h-10 bg-amber-100 hover:bg-amber-200 text-amber-700 rounded-2xl flex items-center text-sm font-medium">
                         🔄 滚动抽测不熟练词
                     </div>
                 </div>
 
                 <!-- 学习主界面 -->
                 <div id="learning-container" class="hidden">
-                    <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-3xl p-8 mb-8">
-                        <!-- 中文提示 -->
-                        <div class="text-center mb-6">
-                            <div id="chinese-display" class="text-5xl font-medium text-blue-900 mb-2"></div>
-                            <div class="flex justify-center gap-4">
-                                <button onclick="speakWord()" 
-                                        class="flex items-center gap-2 px-8 py-4 bg-white rounded-3xl shadow hover:shadow-lg transition-all text-xl">
-                                    🔊 听发音
-                                </button>
-                                <button onclick="showPhonetic()" 
-                                        class="flex items-center gap-2 px-8 py-4 bg-white rounded-3xl shadow hover:shadow-lg transition-all text-xl">
-                                    📍 显示音标
-                                </button>
-                                <button id="show-full-btn" onclick="showFullWord()" 
-                                        class="hidden flex items-center gap-2 px-8 py-4 bg-white rounded-3xl shadow hover:shadow-lg transition-all text-xl text-rose-600">
-                                    👀 显示完整单词
-                                </button>
-                            </div>
-                            <div id="phonetic-display" class="mt-4 text-3xl font-mono text-blue-700 hidden"></div>
-                        </div>
-
-                        <!-- 自然拼读拖拽区 -->
-                        <div class="mb-8">
-                            <div class="text-blue-600 text-sm mb-3 flex items-center justify-between">
-                                <span>🧩 把字母组合拖到下方空格（自然拼读顺序）</span>
-                                <span id="progress-chunks" class="font-medium"></span>
-                            </div>
-                            
-                            <!-- 字母组合池 -->
-                            <div id="chunk-pool" class="flex flex-wrap gap-3 mb-8 min-h-[70px]"></div>
-                            
-                            <!-- 提示下一个按钮 -->
-                            <button onclick="hintNextChunk()" 
-                                    class="mb-4 text-sm px-5 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-2xl flex items-center gap-2">
-                                💡 提示下一个字母组合
-                            </button>
-                            
-                            <!-- 填空区 -->
-                            <div id="dropzone" 
-                                 ondrop="handleDrop(event)" 
-                                 ondragover="allowDrop(event)"
-                                 class="dropzone border-4 border-dashed border-blue-300 rounded-3xl p-8 min-h-[100px] flex items-center justify-center gap-3 text-4xl font-mono bg-white shadow-inner"></div>
-                        </div>
-
-                        <!-- 手动输入 -->
-                        <div class="mb-6">
-                            <div class="text-blue-600 text-sm mb-2">或者直接输入（支持短语空格）</div>
-                            <input id="typing-input" 
-                                   type="text" 
-                                   oninput="handleTyping()"
-                                   class="w-full text-4xl font-mono text-center py-6 border-2 border-blue-200 focus:border-blue-500 rounded-3xl outline-none text-blue-900"
-                                   placeholder="在这里拼写...">
-                        </div>
-
-                        <div class="flex gap-4">
-                            <button onclick="submitSpelling()" 
-                                    class="flex-1 py-6 bg-blue-600 hover:bg-blue-700 text-white text-2xl font-medium rounded-3xl">提交拼写 ✅</button>
-                            <button onclick="giveUp()" 
-                                    class="flex-1 py-6 bg-gray-200 hover:bg-gray-300 text-gray-700 text-2xl font-medium rounded-3xl">我不会了 😭</button>
+                    <!-- 测试进度/时间指示器 -->
+                    <div id="test-indicator" style="display:none" class="mb-4 items-center justify-between bg-indigo-100 border border-indigo-200 rounded-2xl px-4 py-3">
+                        <div class="text-indigo-700 font-medium text-sm md:text-base">🎯 <span id="test-indicator-label">测试进行中</span></div>
+                        <div class="flex items-center gap-3">
+                            <div class="text-indigo-700 font-bold text-lg md:text-2xl" id="test-indicator-value">-</div>
+                            <button onclick="endTestSession(true)" class="text-xs md:text-sm px-3 py-1.5 bg-white border border-indigo-300 hover:bg-indigo-50 text-indigo-700 rounded-xl">结束</button>
                         </div>
                     </div>
 
-                    <div class="text-center text-sm text-blue-500 flex justify-center gap-6">
+                    <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-3xl p-4 md:p-6 mb-6 md:mb-8">
+                        <!-- 1. 图片助记区 -->
+                        <div id="word-image-area" class="mb-4 mx-auto max-w-sm hidden">
+                            <a id="word-image-link" href="#" target="_blank" rel="noopener"
+                               class="block rounded-2xl overflow-hidden bg-white shadow-inner border border-blue-100">
+                                <img id="word-image" alt="图片助记" class="w-full h-48 md:h-56 object-contain bg-gray-50">
+                            </a>
+                            <div id="word-image-caption" class="text-center text-xs text-gray-400 mt-1"></div>
+                        </div>
+
+                        <!-- 2. 中文 + 看图按钮 同行 -->
+                        <div class="flex items-center gap-3 mb-5 mx-auto max-w-xl">
+                            <div class="chinese-card flex-1 mt-3">
+                                <div id="chinese-display" class="text-xl md:text-3xl font-bold text-amber-900 leading-snug text-center"></div>
+                            </div>
+                            <button id="generate-image-btn" onclick="fetchWordImage()" title="换一张图片"
+                                    class="flex-shrink-0 flex flex-col items-center justify-center gap-0.5 w-16 h-16 md:w-20 md:h-20 bg-sky-600 hover:bg-sky-700 text-white rounded-2xl shadow-lg transition">
+                                <span class="text-2xl md:text-3xl">🖼️</span>
+                                <span class="text-[10px] md:text-xs">看图</span>
+                            </button>
+                        </div>
+
+                        <!-- 3. 音标 + 听发音按钮 同行 -->
+                        <div class="flex items-center justify-center gap-3 mb-4 flex-wrap">
+                            <div id="phonetic-display" class="text-xl md:text-2xl font-mono text-blue-700"></div>
+                            <button onclick="speakWord()"
+                                    class="flex items-center gap-1.5 px-3 py-2 bg-white rounded-xl shadow hover:shadow-lg transition-all text-sm md:text-base">
+                                🔊 听发音
+                            </button>
+                        </div>
+
+                        <!-- 4. 自然拼读音节分段（默认显示，点击可听） -->
+                        <div id="chunks-hint-wrapper" class="hidden mb-4">
+                            <div class="text-blue-500 text-xs md:text-sm mb-2 text-center">🔤 自然拼读音节参考（点击可听）</div>
+                            <div id="chunks-hint" class="flex flex-wrap justify-center gap-2"></div>
+                        </div>
+
+                        <!-- 5. 拼写输入框 -->
+                        <div class="mb-3 md:mb-4 mx-auto max-w-xl">
+                            <div class="text-blue-600 text-xs md:text-sm mb-2 text-center">✏️ 在这里拼写（支持短语空格）</div>
+                            <input id="typing-input"
+                                   type="text"
+                                   autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"
+                                   onkeydown="if(event.key==='Enter'){event.preventDefault();submitSpelling();}"
+                                   class="w-full text-2xl md:text-3xl font-mono text-center py-3 md:py-4 border-2 border-blue-200 focus:border-blue-500 rounded-2xl outline-none text-blue-900"
+                                   placeholder="在这里拼写...">
+                        </div>
+
+                        <div class="flex flex-col sm:flex-row gap-3 md:gap-4 mb-4 mx-auto max-w-xl">
+                            <button onclick="submitSpelling()"
+                                    class="flex-1 py-3 md:py-4 bg-blue-600 hover:bg-blue-700 text-white text-lg md:text-xl font-medium rounded-2xl">提交拼写 ✅</button>
+                            <button onclick="giveUp()"
+                                    class="flex-1 py-3 md:py-4 bg-gray-200 hover:bg-gray-300 text-gray-700 text-lg md:text-xl font-medium rounded-2xl">我不会了 😭</button>
+                        </div>
+
+                        <!-- 辅助按钮 -->
+                        <div class="flex flex-wrap justify-center gap-2 md:gap-3 mb-4">
+                            <button id="generate-mnemonic-btn" onclick="generateMnemonic()"
+                                    class="flex items-center gap-2 px-4 py-2 md:px-5 md:py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl shadow hover:shadow-lg transition-all text-sm md:text-base">
+                                ✨ AI 助记
+                            </button>
+                            <button id="show-full-btn" onclick="showFullWord()"
+                                    class="hidden items-center gap-2 px-4 py-2 md:px-5 md:py-2.5 bg-white rounded-2xl shadow hover:shadow-lg transition-all text-sm md:text-base text-rose-600">
+                                👀 显示完整单词
+                            </button>
+                        </div>
+
+                        <!-- 6. AI 助记内容（拼写正确后自动弹出） -->
+                        <div id="mnemonic-area" class="mb-3 mx-auto max-w-xl">
+                            <div id="mnemonic-content" class="hidden rounded-2xl bg-white shadow-inner border border-emerald-100 p-4 md:p-5 text-left text-gray-800 text-base md:text-lg leading-relaxed whitespace-pre-wrap"></div>
+                            <div id="mnemonic-placeholder" class="rounded-2xl border-2 border-dashed border-blue-200 bg-white/60 p-3 md:p-4 text-center text-blue-400 text-xs md:text-sm">
+                                拼写正确后会自动显示 AI 助记，也可随时点击"✨ AI 助记"
+                            </div>
+                        </div>
+
+                        <!-- 7. 下一个按钮（拼对后显示） -->
+                        <div id="next-word-row" class="hidden mx-auto max-w-xl">
+                            <button onclick="advanceNextWord()"
+                                    class="w-full py-3 md:py-4 bg-emerald-500 hover:bg-emerald-600 text-white text-lg md:text-xl font-medium rounded-2xl shadow-lg">
+                                ➡️ 下一个
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="text-center text-sm text-blue-500 flex flex-wrap justify-center gap-4 md:gap-6">
                         <div>当前尝试：<span id="current-attempt" class="font-bold text-blue-700">1</span></div>
                         <div onclick="nextWord()" class="cursor-pointer underline">跳过这个词 →</div>
                     </div>
                 </div>
 
                 <!-- 开始学习按钮 -->
-                <div id="start-screen" class="text-center py-16">
-                    <div class="mx-auto w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center text-6xl mb-8">🚀</div>
-                    <h3 class="text-2xl font-semibold mb-2">和孩子一起学习吧！</h3>
-                    <p class="text-gray-600 max-w-xs mx-auto mb-8">系统会智能监测听读次数和错误次数，自动标记不熟练单词</p>
-                    <div class="flex flex-col gap-4 max-w-xs mx-auto">
-                        <button onclick="startNewLearning()" 
-                                class="py-6 text-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-3xl shadow-lg">📖 开始学习新词</button>
-                        <button onclick="startReview()" 
-                                class="py-6 text-2xl bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-3xl shadow-lg">🔄 进入滚动抽测（不熟练 & 忘记）</button>
+                <div id="start-screen" class="text-center py-8 md:py-12">
+                    <div class="mx-auto w-20 h-20 md:w-24 md:h-24 bg-blue-100 rounded-full flex items-center justify-center text-5xl md:text-6xl mb-6">🚀</div>
+                    <h3 class="text-xl md:text-2xl font-semibold mb-2">和孩子一起学习吧！</h3>
+                    <p class="text-gray-600 max-w-xs mx-auto mb-6 text-sm md:text-base">系统会智能监测听读次数和错误次数，自动标记不熟练单词</p>
+
+                    <!-- 测试模式设置 -->
+                    <div class="max-w-md mx-auto bg-blue-50 rounded-2xl p-4 mb-6 text-left">
+                        <div class="text-sm text-blue-700 font-medium mb-2">🎯 测试模式（可选）</div>
+                        <div class="flex gap-2 mb-3">
+                            <button type="button" data-mode="none" onclick="selectTestMode('none')" class="mode-btn selected flex-1 py-2 rounded-xl bg-white border border-blue-200 text-blue-700 text-sm">不限</button>
+                            <button type="button" data-mode="time" onclick="selectTestMode('time')" class="mode-btn flex-1 py-2 rounded-xl bg-white border border-blue-200 text-blue-700 text-sm">⏱ 按时间</button>
+                            <button type="button" data-mode="count" onclick="selectTestMode('count')" class="mode-btn flex-1 py-2 rounded-xl bg-white border border-blue-200 text-blue-700 text-sm">🔢 按个数</button>
+                        </div>
+                        <div id="time-options" style="display:none" class="gap-2">
+                            <button type="button" data-val="3" onclick="selectTestValue(3)" class="opt-btn flex-1 py-2 rounded-xl bg-white border border-blue-200 text-blue-700 text-sm">3 分钟</button>
+                            <button type="button" data-val="6" onclick="selectTestValue(6)" class="opt-btn flex-1 py-2 rounded-xl bg-white border border-blue-200 text-blue-700 text-sm">6 分钟</button>
+                            <button type="button" data-val="9" onclick="selectTestValue(9)" class="opt-btn flex-1 py-2 rounded-xl bg-white border border-blue-200 text-blue-700 text-sm">9 分钟</button>
+                        </div>
+                        <div id="count-options" style="display:none" class="gap-2">
+                            <button type="button" data-val="10" onclick="selectTestValue(10)" class="opt-btn flex-1 py-2 rounded-xl bg-white border border-blue-200 text-blue-700 text-sm">10 个</button>
+                            <button type="button" data-val="30" onclick="selectTestValue(30)" class="opt-btn flex-1 py-2 rounded-xl bg-white border border-blue-200 text-blue-700 text-sm">30 个</button>
+                            <button type="button" data-val="50" onclick="selectTestValue(50)" class="opt-btn flex-1 py-2 rounded-xl bg-white border border-blue-200 text-blue-700 text-sm">50 个</button>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col gap-3 max-w-xs mx-auto">
+                        <button onclick="startNewLearning()"
+                                class="py-5 text-xl md:text-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-3xl shadow-lg">📖 开始学习新词</button>
+                        <button onclick="startReview()"
+                                class="py-5 text-lg md:text-2xl bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-3xl shadow-lg">🔄 进入滚动抽测</button>
                     </div>
                 </div>
             </div>
@@ -189,27 +292,21 @@
         <!-- 词库管理 -->
         <div id="page-1" class="tab-page mt-8 hidden">
             <div class="bg-white rounded-3xl shadow-xl p-8">
-                <div class="flex justify-between items-center mb-6">
+                <div class="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6">
                     <h2 class="text-2xl font-semibold text-blue-900">词库管理</h2>
-                    <div class="flex gap-3">
-                        <button onclick="exportJSON()" 
-                                class="px-6 py-3 bg-white border border-blue-300 hover:border-blue-500 text-blue-700 rounded-2xl flex items-center gap-2">
-                            📤 导出JSON
-                        </button>
-                        <label onclick="document.getElementById('importFile').click()" 
-                               class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl flex items-center gap-2 cursor-pointer">
-                            📥 导入JSON（课本单词）
-                            <input type="file" id="importFile" accept=".json" class="hidden" onchange="importJSON(event)">
-                        </label>
-                        <button onclick="showAddWordModal()" 
-                                class="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl flex items-center gap-2">
-                            + 新增单词/短语
+                    <div class="flex flex-wrap gap-3 items-center">
+                        <label class="text-sm text-blue-700">切换词库：</label>
+                        <select id="wordbook-select" onchange="onWordbookChange(this.value)"
+                                class="px-4 py-2 rounded-2xl border border-blue-200 bg-white text-blue-800 focus:border-blue-500 outline-none"></select>
+                        <button onclick="exportJSON()"
+                                class="px-5 py-2 bg-white border border-blue-300 hover:border-blue-500 text-blue-700 rounded-2xl flex items-center gap-2">
+                            📤 导出进度JSON
                         </button>
                     </div>
                 </div>
 
                 <div class="mb-6 bg-blue-50 border border-blue-200 rounded-2xl p-4 text-sm">
-                    💡 PDF/拍照导入说明：先转文字，再整理成JSON格式导入。支持短语（空格会自动处理）。
+                    💡 当前词库来自服务器，切换词库会重置个人学习状态（仅当前账号）。
                 </div>
 
                 <div class="overflow-x-auto">
@@ -220,7 +317,6 @@
                                 <th class="py-4 px-6 font-medium">音标</th>
                                 <th class="py-4 px-6 font-medium">中文</th>
                                 <th class="py-4 px-6 font-medium">状态</th>
-                                <th class="py-4 px-6 font-medium text-center">操作</th>
                             </tr>
                         </thead>
                         <tbody id="word-list" class="divide-y"></tbody>
@@ -288,37 +384,46 @@
         </div>
     </div>
 
-    <!-- 新增单词弹窗（同之前，略有优化提示） -->
-    <div id="add-modal" onclick="if(event.target===this)hideAddWordModal()" 
-         class="hidden fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-        <div onclick="event.stopImmediatePropagation()" 
-             class="bg-white rounded-3xl max-w-md w-full mx-4 p-8">
-            <h3 class="text-2xl font-semibold mb-6">新增单词 / 短语</h3>
-            <div class="space-y-6">
+    <!-- 登录 / 注册遮罩 -->
+    <div id="auth-overlay" class="hidden fixed inset-0 bg-gradient-to-br from-blue-100 to-indigo-200 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md p-8">
+            <div class="flex items-center gap-3 mb-6">
+                <img src="Lepi%20English%20logo1-min.png" alt="Logo" class="w-12 h-12 rounded-2xl object-contain bg-white shadow-inner p-1">
                 <div>
-                    <label class="block text-sm text-blue-700 mb-1">英文（单词或短语）</label>
-                    <input id="modal-english" type="text" class="w-full px-5 py-4 rounded-2xl border border-blue-200 focus:border-blue-500 outline-none text-xl">
-                </div>
-                <div>
-                    <label class="block text-sm text-blue-700 mb-1">音标</label>
-                    <input id="modal-phonetic" type="text" placeholder="/ˈæp.əl/" class="w-full px-5 py-4 rounded-2xl border border-blue-200 focus:border-blue-500 outline-none text-xl font-mono">
-                </div>
-                <div>
-                    <label class="block text-sm text-blue-700 mb-1">中文意思</label>
-                    <input id="modal-chinese" type="text" class="w-full px-5 py-4 rounded-2xl border border-blue-200 focus:border-blue-500 outline-none text-xl">
-                </div>
-                <div>
-                    <label class="block text-sm text-blue-700 mb-1">自然拼读字母组合（用逗号分隔）</label>
-                    <input id="modal-chunks" type="text" placeholder="ap,ple 或 for,example" class="w-full px-5 py-4 rounded-2xl border border-blue-200 focus:border-blue-500 outline-none text-xl font-mono">
-                    <p class="text-xs text-blue-500 mt-1">短语请用逗号分隔每个部分，例如 "good,morning"</p>
+                    <h3 class="text-2xl font-bold text-blue-900">乐拼英语</h3>
+                    <p class="text-xs text-blue-500">学得快 · 用得好</p>
                 </div>
             </div>
-            <div class="flex gap-3 mt-10">
-                <button onclick="hideAddWordModal()" 
-                        class="flex-1 py-4 text-gray-500 border border-gray-300 rounded-3xl">取消</button>
-                <button onclick="addNewWord()" 
-                        class="flex-1 py-4 bg-emerald-600 text-white rounded-3xl">保存到词库</button>
+            <div class="flex gap-2 mb-6">
+                <button id="auth-tab-login" onclick="switchAuthTab('login')"
+                        class="flex-1 py-2.5 rounded-2xl bg-blue-600 text-white font-medium">登录</button>
+                <button id="auth-tab-register" onclick="switchAuthTab('register')"
+                        class="flex-1 py-2.5 rounded-2xl bg-gray-100 text-gray-700 font-medium">注册</button>
             </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm text-blue-700 mb-1">用户名</label>
+                    <input id="auth-username" type="text" autocomplete="username"
+                           onkeydown="if(event.key==='Enter'){event.preventDefault();doAuthSubmit();}"
+                           class="w-full px-4 py-3 rounded-2xl border border-blue-200 focus:border-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm text-blue-700 mb-1">密码</label>
+                    <input id="auth-password" type="password" autocomplete="current-password"
+                           onkeydown="if(event.key==='Enter'){event.preventDefault();doAuthSubmit();}"
+                           class="w-full px-4 py-3 rounded-2xl border border-blue-200 focus:border-blue-500 outline-none">
+                </div>
+                <div id="auth-wordbook-row" class="hidden">
+                    <label class="block text-sm text-blue-700 mb-1">选择词库（注册后可在"词库管理"切换）</label>
+                    <select id="auth-wordbook"
+                            class="w-full px-4 py-3 rounded-2xl border border-blue-200 focus:border-blue-500 outline-none bg-white"></select>
+                </div>
+            </div>
+            <div id="auth-error" class="hidden mt-4 text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-4 py-2"></div>
+            <button id="auth-submit" onclick="doAuthSubmit()"
+                    class="mt-6 w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-lg font-semibold rounded-3xl shadow-lg">
+                登 录
+            </button>
         </div>
     </div>
 
@@ -327,12 +432,69 @@
         let words = [];
         let currentWordIndex = -1;
         let isReviewMode = false;
-        let placedChunks = [];
         let currentAttempt = 1;
         let todayLearned = 0;
         let showFullWordFlag = false;
         let speakCount = 0;        // 本次学习听发音次数
-        let dragErrorCount = 0;    // 本次学习拖拽错误次数
+        let typingErrorCount = 0;  // 本次学习提交错误次数
+
+        // 当前登录用户
+        let currentUser = null;
+
+        // 语音播放
+        let voicesReady = false;
+        let englishVoice = null;
+        let speakKeepAliveId = null;
+
+        // 测试模式
+        let testMode = 'none';     // 'none' | 'time' | 'count'
+        let testLimit = null;       // 分钟（time）或 单词数（count）
+        let testStart = 0;
+        let testWordsDone = 0;
+        let testTimerId = null;
+
+        // ================ API 封装 ================
+        async function api(path, opts = {}) {
+            const init = {
+                method: opts.method || 'GET',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' }
+            };
+            if (opts.body !== undefined) init.body = JSON.stringify(opts.body);
+            const res = await fetch(path, init);
+            const text = await res.text();
+            let data = null;
+            try { data = text ? JSON.parse(text) : null; } catch (e) { /* 非 JSON */ }
+            if (!res.ok) {
+                const err = new Error((data && data.error) || `HTTP ${res.status}`);
+                err.status = res.status;
+                err.data = data;
+                throw err;
+            }
+            return data;
+        }
+
+        async function loadWordsFromServer() {
+            const list = await api('/api/words');
+            words = (list || []).map(w => ({
+                id: w.id,
+                english: w.english,
+                phonetic: w.phonetic || '/.../',
+                chinese: w.chinese || '',
+                chunks: Array.isArray(w.chunks) && w.chunks.length ? w.chunks : [w.english],
+                phrase: w.phrase || '',
+                status: w.status || null,
+                attempts: w.attempts || 0
+            }));
+        }
+
+        async function patchWordOnServer(wordId, patch) {
+            try {
+                await api(`/api/words/${wordId}`, { method: 'PATCH', body: patch });
+            } catch (err) {
+                console.warn('保存进度失败：', err);
+            }
+        }
 
         // ==================== 智能监测核心逻辑 ====================
         function markAsNotProficient() {
@@ -340,161 +502,109 @@
             const word = words[currentWordIndex];
             if (word.status !== 'proficient') {   // 已熟练的不再降级
                 word.status = 'not_proficient';
-                saveToLocal();
+                patchWordOnServer(word.id, { status: 'not_proficient' });
             }
         }
 
-        // 初始示例数据
-        const sampleWords = [ /* 同之前示例，省略以节省篇幅，实际代码中保留 */ 
-            {id:1, english:"environment", phonetic:"/ɪnˈvaɪ.rən.mənt/", chinese:"环境", chunks:["en","vi","ron","ment"], status:null, attempts:0},
-            // ... 其余7个示例保持不变
-        ];
-
-        // ================ 工具函数 ================
-        function saveToLocal() {
-            localStorage.setItem('daughter_english_words', JSON.stringify(words));
+        // 语音初始化与播放（解决首次无声 / 延时 / Chrome 超时挂起）
+        function initSpeech() {
+            if (!('speechSynthesis' in window)) return;
+            const load = () => {
+                const voices = speechSynthesis.getVoices();
+                if (!voices.length) return;
+                voicesReady = true;
+                englishVoice = voices.find(v => v.lang === 'en-GB')
+                    || voices.find(v => v.lang === 'en-US')
+                    || voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en'))
+                    || voices[0];
+            };
+            load();
+            if (!voicesReady && 'onvoiceschanged' in speechSynthesis) {
+                speechSynthesis.onvoiceschanged = load;
+            }
+            // 预热：首次静音朗读，避免第一次调用无声
+            try {
+                const warm = new SpeechSynthesisUtterance(' ');
+                warm.volume = 0;
+                speechSynthesis.speak(warm);
+            } catch (e) {}
+            // 定期 ping，防止 Chrome 长时间不用后挂起
+            if (speakKeepAliveId) clearInterval(speakKeepAliveId);
+            speakKeepAliveId = setInterval(() => {
+                if (speechSynthesis.speaking) {
+                    try { speechSynthesis.pause(); speechSynthesis.resume(); } catch (e) {}
+                }
+            }, 8000);
         }
 
-        function loadFromLocal() {
-            const saved = localStorage.getItem('daughter_english_words');
-            if (saved) {
-                words = JSON.parse(saved);
-            } else {
-                words = JSON.parse(JSON.stringify(sampleWords));
-                saveToLocal();
-            }
+        function speak(text, opts = {}) {
+            if (!text || !('speechSynthesis' in window)) return;
+            try { speechSynthesis.cancel(); } catch (e) {}
+            const u = new SpeechSynthesisUtterance(text);
+            u.lang = opts.lang || 'en-GB';
+            u.rate = opts.rate || 0.95;
+            u.pitch = opts.pitch || 1.05;
+            if (englishVoice) u.voice = englishVoice;
+            // 延时一点再 speak，确保 cancel 生效、voices 已就绪
+            setTimeout(() => {
+                try { speechSynthesis.speak(u); } catch (e) { console.warn('speak 失败', e); }
+            }, 80);
         }
 
         function speakWord() {
             if (currentWordIndex === -1) return;
-            const word = words[currentWordIndex];
-            const utterance = new SpeechSynthesisUtterance(word.english);
-            utterance.lang = 'en-GB';   // 英式发音
-            utterance.rate = 0.95;      // 稍慢一点，更清晰
-            utterance.pitch = 1.05;
-            speechSynthesis.speak(utterance);
-
+            speak(words[currentWordIndex].english);
             speakCount++;
-            if (speakCount >= 3) {
-                markAsNotProficient();
-            }
+            if (speakCount >= 3) markAsNotProficient();
         }
 
-        // 允许拖拽
-        function allowDrop(ev) { ev.preventDefault(); }
-
-        function handleDrop(ev) {
-            ev.preventDefault();
-            const chunkText = ev.dataTransfer.getData("text/plain");
+        // 渲染只读的自然拼读音节提示（点击可听）
+        function renderChunksHint() {
+            const wrapper = document.getElementById('chunks-hint-wrapper');
+            const pool = document.getElementById('chunks-hint');
             const word = words[currentWordIndex];
-
-            if (placedChunks.length < word.chunks.length && chunkText === word.chunks[placedChunks.length]) {
-                placedChunks.push(chunkText);
-                renderDropzone();
-                document.getElementById('typing-input').value = placedChunks.join('');
-            } else {
-                dragErrorCount++;
-                const zone = document.getElementById('dropzone');
-                zone.classList.add('!border-red-400');
-                setTimeout(() => zone.classList.remove('!border-red-400'), 400);
-
-                if (dragErrorCount >= 2) {
-                    markAsNotProficient();
-                }
+            if (!word || !Array.isArray(word.chunks) || word.chunks.length <= 1) {
+                wrapper.classList.add('hidden');
+                pool.innerHTML = '';
+                return;
             }
-        }
-
-        function renderChunkPool() {
-            const pool = document.getElementById('chunk-pool');
+            wrapper.classList.remove('hidden');
             pool.innerHTML = '';
-            const word = words[currentWordIndex];
-            const shuffled = [...word.chunks].sort(() => Math.random() - 0.5);
-            
-            shuffled.forEach(chunk => {
+            word.chunks.forEach(chunk => {
                 const div = document.createElement('div');
-                div.className = `chunk px-8 py-4 bg-blue-100 hover:bg-blue-200 text-blue-800 text-3xl font-medium rounded-3xl cursor-move select-none shadow-md`;
-                div.draggable = true;
+                div.className = 'chunk px-3 py-1.5 md:px-4 md:py-2 bg-blue-100 hover:bg-blue-200 text-blue-800 text-base md:text-xl font-medium rounded-2xl cursor-pointer select-none';
                 div.textContent = chunk;
-                div.ondragstart = (e) => e.dataTransfer.setData("text/plain", chunk);
-                div.onclick = () => {
-                    const u = new SpeechSynthesisUtterance(chunk);
-                    u.lang = 'en-GB';
-                    speechSynthesis.speak(u);
-                };
+                div.title = '点击听发音';
+                div.onclick = () => speak(chunk);
                 pool.appendChild(div);
             });
-        }
-
-        function renderDropzone() {
-            const zone = document.getElementById('dropzone');
-            zone.innerHTML = '';
-            placedChunks.forEach(chunk => {
-                const div = document.createElement('div');
-                div.className = 'px-5 py-3 bg-emerald-100 text-emerald-800 rounded-2xl text-3xl font-medium shadow-inner';
-                div.textContent = chunk;
-                zone.appendChild(div);
-            });
-            document.getElementById('progress-chunks').innerHTML = `${placedChunks.length} / ${words[currentWordIndex].chunks.length} 已完成`;
-            if (placedChunks.length === words[currentWordIndex].chunks.length) {
-                zone.style.borderColor = '#10b981';
-            }
-        }
-
-        // 智能输入处理（支持短语空格）
-        function handleTyping() {
-            const input = document.getElementById('typing-input').value.trim();
-            const word = words[currentWordIndex];
-            const expected = word.english.toLowerCase();
-            
-            if (input.toLowerCase() === placedChunks.join('').toLowerCase()) return;
-
-            placedChunks = [];
-            let temp = '';
-            for (let chunk of word.chunks) {
-                temp += chunk;
-                if (input.toLowerCase().startsWith(temp.toLowerCase())) {
-                    placedChunks.push(chunk);
-                } else {
-                    break;
-                }
-            }
-            renderDropzone();
-        }
-
-        function hintNextChunk() {
-            if (currentWordIndex === -1) return;
-            const word = words[currentWordIndex];
-            if (placedChunks.length < word.chunks.length) {
-                const next = word.chunks[placedChunks.length];
-                alert(`💡 下一个字母组合是：${next}`);
-            }
         }
 
         function submitSpelling() {
             if (currentWordIndex === -1) return;
             const word = words[currentWordIndex];
-            const built = placedChunks.join('');
+            const input = (document.getElementById('typing-input').value || '').trim();
 
-            if (built.toLowerCase() === word.english.toLowerCase()) {
-                // 只有第一次尝试且听读<3次、拖拽错误<2次，才算熟练
-                if (currentAttempt === 1 && speakCount < 3 && dragErrorCount < 2) {
+            if (input.toLowerCase() === word.english.toLowerCase()) {
+                if (currentAttempt === 1 && speakCount < 3 && typingErrorCount < 1) {
                     word.status = 'proficient';
                 } else {
                     word.status = 'not_proficient';
                 }
                 word.attempts = (word.attempts || 0) + 1;
                 todayLearned++;
-                saveToLocal();
+                patchWordOnServer(word.id, { status: word.status, attempts: word.attempts });
                 showSuccessFeedback();
-                setTimeout(nextWord, 1500);
+                testWordsDone++;
+                updateTestIndicator();
+                generateMnemonic();
+                document.getElementById('next-word-row').classList.remove('hidden');
             } else {
                 currentAttempt++;
+                typingErrorCount++;
                 document.getElementById('current-attempt').textContent = currentAttempt;
-                markAsNotProficient();   // 提交失败也标记不熟练
-                const input = document.getElementById('typing-input');
-                input.classList.add('animate-pulse', 'border-red-400');
-                setTimeout(() => input.classList.remove('animate-pulse', 'border-red-400'), 800);
-                alert(`😣 拼写错误！正确答案是：${word.english}`);
+                markAsNotProficient();
+                showErrorFeedback(word.english);
             }
         }
 
@@ -503,10 +613,13 @@
             const word = words[currentWordIndex];
             word.status = 'forgotten';
             word.attempts = (word.attempts || 0) + 1;
-            saveToLocal();
+            patchWordOnServer(word.id, { status: 'forgotten', attempts: word.attempts });
             showFullWordFlag = true;
             document.getElementById('show-full-btn').classList.remove('hidden');
-            alert(`📝 已标记为“忘记”，下次会重点复习！`);
+            alert(`📝 已标记为"忘记"，下次会重点复习！\n完整单词是：${word.english}`);
+            testWordsDone++;
+            updateTestIndicator();
+            if (checkTestLimit()) return;
             nextWord();
         }
 
@@ -517,15 +630,22 @@
         }
 
         function showSuccessFeedback() {
-            const zone = document.getElementById('dropzone');
-            zone.innerHTML = `
-                <div class="flex flex-col items-center justify-center text-emerald-500">
-                    <div class="text-8xl mb-4">🎉</div>
-                    <div class="text-3xl font-bold">太棒啦！${words[currentWordIndex].english}</div>
-                    <div class="text-xl">自然拼读完成！</div>
-                </div>
-            `;
+            const inp = document.getElementById('typing-input');
+            inp.classList.remove('typing-error');
+            inp.classList.add('border-emerald-400', 'text-emerald-600');
+            inp.value = `🎉 太棒啦！${words[currentWordIndex].english}`;
             createConfetti();
+        }
+
+        function showErrorFeedback(correctWord) {
+            const inp = document.getElementById('typing-input');
+            inp.classList.add('typing-error');
+            createSadDrops();
+            setTimeout(() => {
+                inp.classList.remove('typing-error');
+                inp.value = '';
+                inp.focus();
+            }, 1400);
         }
 
         // 简单彩带庆祝效果
@@ -558,53 +678,107 @@
             }
         }
 
+        // 错误时的"泪滴"效果，跟成功庆祝风格对齐
+        function createSadDrops() {
+            const chars = ['💧','😢','💦'];
+            for (let i = 0; i < 24; i++) {
+                setTimeout(() => {
+                    const d = document.createElement('div');
+                    d.className = 'confetti';
+                    d.textContent = chars[Math.floor(Math.random() * chars.length)];
+                    d.style.fontSize = '24px';
+                    d.style.left = Math.random() * 100 + 'vw';
+                    d.style.top = '-20px';
+                    document.body.appendChild(d);
+                    let y = -20;
+                    const fall = setInterval(() => {
+                        y += 5 + Math.random() * 4;
+                        d.style.top = y + 'px';
+                        if (y > window.innerHeight) { clearInterval(fall); d.remove(); }
+                    }, 30);
+                }, i * 25);
+            }
+        }
+
         function resetLearningState() {
             speakCount = 0;
-            dragErrorCount = 0;
-            placedChunks = [];
+            typingErrorCount = 0;
             currentAttempt = 1;
             showFullWordFlag = false;
         }
 
+        function resetMnemonicArea() {
+            const content = document.getElementById('mnemonic-content');
+            const placeholder = document.getElementById('mnemonic-placeholder');
+            if (content) { content.textContent = ''; content.classList.add('hidden'); }
+            if (placeholder) {
+                placeholder.classList.remove('hidden');
+                placeholder.textContent = '拼写正确后会自动显示 AI 助记，也可随时点击"✨ AI 助记"';
+            }
+            const imgArea = document.getElementById('word-image-area');
+            const img = document.getElementById('word-image');
+            const cap = document.getElementById('word-image-caption');
+            const link = document.getElementById('word-image-link');
+            if (imgArea) imgArea.classList.add('hidden');
+            if (img) img.src = '';
+            if (cap) cap.textContent = '';
+            if (link) link.href = '#';
+        }
+
         function nextWord() {
             resetLearningState();
-            document.getElementById('typing-input').value = '';
-            document.getElementById('phonetic-display').classList.add('hidden');
+            const inp = document.getElementById('typing-input');
+            inp.value = '';
+            inp.classList.remove('typing-error', 'border-emerald-400', 'text-emerald-600');
             document.getElementById('show-full-btn').classList.add('hidden');
+            document.getElementById('next-word-row').classList.add('hidden');
+            resetMnemonicArea();
 
-            const candidates = isReviewMode 
+            const candidates = isReviewMode
                 ? words.filter(w => w.status === 'not_proficient' || w.status === 'forgotten')
                 : words.filter(w => !w.status || w.status === 'not_proficient' || w.status === 'forgotten');
 
             if (candidates.length === 0) {
-                alert('🎉 恭喜！本轮已全部掌握！可以继续导入新单词～');
+                alert('🎉 恭喜！本轮已全部掌握！可以去词库管理切换词库继续学习～');
                 document.getElementById('learning-container').classList.add('hidden');
                 document.getElementById('start-screen').classList.remove('hidden');
                 return;
             }
-            
+
             currentWordIndex = words.indexOf(candidates[Math.floor(Math.random() * candidates.length)]);
             const word = words[currentWordIndex];
             document.getElementById('chinese-display').textContent = word.chinese;
+            document.getElementById('phonetic-display').textContent = word.phonetic || '';
             document.getElementById('current-attempt').textContent = 1;
-            renderChunkPool();
-            renderDropzone();
+            renderChunksHint();
+            inp.focus();
+            fetchWordImage();
+        }
+
+        function advanceNextWord() {
+            document.getElementById('next-word-row').classList.add('hidden');
+            if (checkTestLimit()) return;
+            nextWord();
         }
 
         function startNewLearning() {
+            if (!validateTestSelection()) return;
             isReviewMode = false;
             document.getElementById('review-mode-btn').classList.remove('bg-emerald-200', 'text-emerald-800');
             document.getElementById('review-mode-btn').classList.add('bg-amber-100', 'text-amber-700');
             document.getElementById('start-screen').classList.add('hidden');
             document.getElementById('learning-container').classList.remove('hidden');
+            beginTestSession();
             nextWord();
         }
 
         function startReview() {
+            if (!validateTestSelection()) return;
             isReviewMode = true;
             document.getElementById('review-mode-btn').classList.add('bg-emerald-200', 'text-emerald-800');
             document.getElementById('start-screen').classList.add('hidden');
             document.getElementById('learning-container').classList.remove('hidden');
+            beginTestSession();
             nextWord();
         }
 
@@ -640,125 +814,29 @@
             if (n === 2) renderProgress();
         }
 
-        // 词库渲染、删除、新增、导入导出等函数保持逻辑一致，略作字段校验优化
+        // 词库渲染（只读）
         function renderWordList() {
-            // ...（与之前版本基本相同，省略以节省长度，实际代码中完整保留）
             const tbody = document.getElementById('word-list');
             tbody.innerHTML = '';
-            words.forEach((word, index) => {
+            words.forEach((word) => {
                 let statusHTML = `<span class="px-4 py-1 text-xs rounded-3xl bg-gray-200 text-gray-700">未学习</span>`;
                 if (word.status === 'proficient') statusHTML = `<span class="px-4 py-1 text-xs rounded-3xl text-white status-proficient">熟练 ✅</span>`;
                 else if (word.status === 'not_proficient') statusHTML = `<span class="px-4 py-1 text-xs rounded-3xl text-white status-not">不熟练 ⚠️</span>`;
                 else if (word.status === 'forgotten') statusHTML = `<span class="px-4 py-1 text-xs rounded-3xl text-white status-forgot">忘记 ❌</span>`;
-                
+
                 const tr = document.createElement('tr');
                 tr.className = 'hover:bg-blue-50 transition-colors';
                 tr.innerHTML = `
-                    <td class="py-5 px-6 font-medium text-xl">${word.english}</td>
-                    <td class="py-5 px-6 font-mono text-blue-600">${word.phonetic}</td>
-                    <td class="py-5 px-6">${word.chinese}</td>
-                    <td class="py-5 px-6">${statusHTML}</td>
-                    <td class="py-5 px-6 text-center">
-                        <button onclick="deleteWord(${index});" class="text-red-400 hover:text-red-600 px-4">删除</button>
-                    </td>
+                    <td class="py-4 px-6 font-medium text-lg">${word.english}</td>
+                    <td class="py-4 px-6 font-mono text-blue-600">${word.phonetic}</td>
+                    <td class="py-4 px-6">${word.chinese}</td>
+                    <td class="py-4 px-6">${statusHTML}</td>
                 `;
                 tbody.appendChild(tr);
             });
             if (words.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" class="text-center py-12 text-gray-400">词库为空，快导入课本单词吧～</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center py-12 text-gray-400">词库为空～</td></tr>`;
             }
-        }
-
-        function deleteWord(index) {
-            if (confirm('确定删除这个单词吗？')) {
-                words.splice(index, 1);
-                saveToLocal();
-                renderWordList();
-            }
-        }
-
-        function showAddWordModal() {
-            document.getElementById('add-modal').classList.remove('hidden');
-            document.getElementById('modal-english').value = '';
-            document.getElementById('modal-phonetic').value = '';
-            document.getElementById('modal-chinese').value = '';
-            document.getElementById('modal-chunks').value = '';
-        }
-
-        function hideAddWordModal() {
-            document.getElementById('add-modal').classList.add('hidden');
-        }
-
-        function addNewWord() {
-            const english = document.getElementById('modal-english').value.trim();
-            const phonetic = document.getElementById('modal-phonetic').value.trim();
-            const chinese = document.getElementById('modal-chinese').value.trim();
-            const chunksStr = document.getElementById('modal-chunks').value.trim();
-            
-            if (!english || !chinese || !chunksStr) {
-                alert('英文、中文、字母组合均为必填！');
-                return;
-            }
-            
-            const chunks = chunksStr.split(',').map(c => c.trim()).filter(Boolean);
-            const joined = chunks.join('');
-            
-            if (joined.toLowerCase().replace(/\s+/g, '') !== english.toLowerCase().replace(/\s+/g, '')) {
-                if (!confirm('字母组合拼接后与英文不完全一致，确定保存吗？')) return;
-            }
-            
-            const newWord = {
-                id: Date.now(),
-                english: english,
-                phonetic: phonetic || '/.../',
-                chinese: chinese,
-                chunks: chunks,
-                status: null,
-                attempts: 0
-            };
-            
-            words.unshift(newWord);
-            saveToLocal();
-            hideAddWordModal();
-            renderWordList();
-            alert('✅ 新单词/短语已加入词库！');
-        }
-
-        function importJSON(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = function(ev) {
-                try {
-                    const imported = JSON.parse(ev.target.result);
-                    if (Array.isArray(imported)) {
-                        let count = 0;
-                        imported.forEach(imp => {
-                            if (!imp.english || !imp.chinese || !imp.chunks || !Array.isArray(imp.chunks)) {
-                                return; // 跳过无效数据
-                            }
-                            if (!words.find(w => w.english.toLowerCase() === imp.english.toLowerCase())) {
-                                words.push({
-                                    id: Date.now() + Math.random(),
-                                    english: imp.english,
-                                    phonetic: imp.phonetic || '/.../',
-                                    chinese: imp.chinese,
-                                    chunks: imp.chunks,
-                                    status: null,
-                                    attempts: 0
-                                });
-                                count++;
-                            }
-                        });
-                        saveToLocal();
-                        renderWordList();
-                        alert(`✅ 成功导入 ${count} 个有效单词/短语！`);
-                    }
-                } catch(err) {
-                    alert('JSON 格式错误，请检查文件是否正确！');
-                }
-            };
-            reader.readAsText(file);
         }
 
         function exportJSON() {
@@ -767,18 +845,46 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = '初三英语词库_女儿版.json';
+            a.download = `${(currentUser && currentUser.username) || 'user'}_progress.json`;
             a.click();
         }
 
-        function resetData() {
-            if (confirm('⚠️ 确定清空所有数据并恢复初始示例吗？')) {
-                localStorage.removeItem('daughter_english_words');
-                words = JSON.parse(JSON.stringify(sampleWords));
-                saveToLocal();
+        // 词库切换
+        async function populateWordbookSelect(selectId) {
+            try {
+                const list = await api('/api/wordbooks');
+                const sel = document.getElementById(selectId);
+                sel.innerHTML = '';
+                (list || []).forEach(name => {
+                    const opt = document.createElement('option');
+                    opt.value = name;
+                    opt.textContent = name;
+                    sel.appendChild(opt);
+                });
+                if (currentUser && currentUser.wordbook_name) {
+                    sel.value = currentUser.wordbook_name;
+                }
+            } catch (err) {
+                console.warn('词库列表加载失败：', err);
+            }
+        }
+
+        async function onWordbookChange(name) {
+            if (!currentUser || name === currentUser.wordbook_name) return;
+            if (!confirm(`切换到词库"${name}"会重置当前学习进度，确定吗？`)) {
+                document.getElementById('wordbook-select').value = currentUser.wordbook_name;
+                return;
+            }
+            try {
+                await api('/api/switch-wordbook', { method: 'POST', body: { wordbook_name: name } });
+                currentUser.wordbook_name = name;
+                document.getElementById('user-wordbook').textContent = name;
+                await loadWordsFromServer();
                 renderWordList();
                 renderProgress();
-                alert('数据已重置');
+                alert(`✅ 已切换到词库：${name}`);
+            } catch (err) {
+                alert('切换失败：' + err.message);
             }
         }
 
@@ -820,13 +926,256 @@
             renderWordList();
         }
 
-        // ================ 初始化 ================
-        function init() {
-            loadFromLocal();
+        // ==================== 测试模式：时间 / 单词个数 ====================
+        function selectTestMode(mode) {
+            testMode = mode;
+            testLimit = null;
+            document.querySelectorAll('.mode-btn').forEach(b => {
+                b.classList.toggle('selected', b.dataset.mode === mode);
+            });
+            document.querySelectorAll('.opt-btn').forEach(b => b.classList.remove('selected'));
+            document.getElementById('time-options').style.display  = (mode === 'time')  ? 'flex' : 'none';
+            document.getElementById('count-options').style.display = (mode === 'count') ? 'flex' : 'none';
+        }
+
+        function selectTestValue(val) {
+            testLimit = val;
+            const listId = testMode === 'time' ? 'time-options' : 'count-options';
+            document.querySelectorAll('#' + listId + ' .opt-btn').forEach(b => {
+                b.classList.toggle('selected', Number(b.dataset.val) === val);
+            });
+        }
+
+        function validateTestSelection() {
+            if (testMode !== 'none' && !testLimit) {
+                alert('请先选择具体的' + (testMode === 'time' ? '时间' : '单词个数') + '～');
+                return false;
+            }
+            return true;
+        }
+
+        function beginTestSession() {
+            testWordsDone = 0;
+            testStart = Date.now();
+            if (testTimerId) { clearInterval(testTimerId); testTimerId = null; }
+            const ind = document.getElementById('test-indicator');
+            if (testMode === 'none' || !testLimit) {
+                ind.style.display = 'none';
+                return;
+            }
+            ind.style.display = 'flex';
+            updateTestIndicator();
+            if (testMode === 'time') {
+                testTimerId = setInterval(updateTestIndicator, 500);
+            }
+        }
+
+        function updateTestIndicator() {
+            if (testMode === 'none' || !testLimit) return;
+            const label = document.getElementById('test-indicator-label');
+            const val   = document.getElementById('test-indicator-value');
+            if (testMode === 'time') {
+                const remain = Math.max(0, testLimit * 60 * 1000 - (Date.now() - testStart));
+                const min = Math.floor(remain / 60000);
+                const sec = Math.floor((remain % 60000) / 1000);
+                label.textContent = '剩余时间';
+                val.textContent = `${min}:${String(sec).padStart(2,'0')}`;
+                if (remain <= 0) endTestSession(false);
+            } else if (testMode === 'count') {
+                label.textContent = '单词进度';
+                val.textContent = `${testWordsDone} / ${testLimit}`;
+            }
+        }
+
+        function checkTestLimit() {
+            if (testMode === 'none' || !testLimit) return false;
+            if (testMode === 'time' && Date.now() - testStart >= testLimit * 60 * 1000) {
+                endTestSession(false); return true;
+            }
+            if (testMode === 'count' && testWordsDone >= testLimit) {
+                endTestSession(false); return true;
+            }
+            return false;
+        }
+
+        function endTestSession(manual) {
+            if (manual && !confirm(`确定结束本次测试吗？已完成 ${testWordsDone} 个单词`)) return;
+            if (testTimerId) { clearInterval(testTimerId); testTimerId = null; }
+            document.getElementById('test-indicator').style.display = 'none';
+            if (!manual) {
+                alert(`⏰ 本次测试结束！完成了 ${testWordsDone} 个单词～`);
+            }
+            document.getElementById('learning-container').classList.add('hidden');
+            document.getElementById('start-screen').classList.remove('hidden');
+        }
+
+        // ================ AI 文字助记（千问） ================
+        async function generateMnemonic() {
+            if (currentWordIndex === -1) return;
+            const word = words[currentWordIndex];
+            const btn = document.getElementById('generate-mnemonic-btn');
+            const content = document.getElementById('mnemonic-content');
+            const placeholder = document.getElementById('mnemonic-placeholder');
+            const originalBtnText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '⏳ 生成中...';
+            placeholder.classList.remove('hidden');
+            placeholder.textContent = '🤖 千问正在思考，请稍候（约 3-10 秒）...';
+            content.classList.add('hidden');
+            try {
+                const data = await api('/api/mnemonic', {
+                    method: 'POST',
+                    body: { english: word.english, chinese: word.chinese }
+                });
+                content.textContent = data.text || '';
+                content.classList.remove('hidden');
+                placeholder.classList.add('hidden');
+            } catch (err) {
+                placeholder.textContent = '❌ 生成失败：' + err.message;
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalBtnText;
+            }
+        }
+
+        // ================ 图片助记（Pixabay / Wikipedia） ================
+        async function fetchWordImage() {
+            if (currentWordIndex === -1) { console.log('[IMG] skip: no word'); return; }
+            const word = words[currentWordIndex];
+            console.log('[IMG] fetching image for:', word.english);
+            const btn = document.getElementById('generate-image-btn');
+            const area = document.getElementById('word-image-area');
+            const img = document.getElementById('word-image');
+            const link = document.getElementById('word-image-link');
+            const cap = document.getElementById('word-image-caption');
+            const wordAtStart = word.english;
+            const originalBtnText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '⏳';
+            area.classList.add('hidden');
+            try {
+                const data = await api('/api/word-image', {
+                    method: 'POST',
+                    body: { english: word.english, chinese: word.chinese }
+                });
+                console.log('[IMG] got result:', data);
+                // 异步返回时如果已切到下一词就丢弃结果
+                if (!words[currentWordIndex] || words[currentWordIndex].english !== wordAtStart) return;
+                img.src = data.url;
+                link.href = data.page || data.url;
+                cap.textContent = `来源：${data.source === 'pixabay' ? 'Pixabay' : 'Wikipedia'}${data.title ? ' · ' + data.title : ''}`;
+                area.classList.remove('hidden');
+            } catch (err) {
+                console.warn('[IMG] error:', err.message, err.status);
+                if (!words[currentWordIndex] || words[currentWordIndex].english !== wordAtStart) return;
+                area.classList.add('hidden');
+                img.removeAttribute('src');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalBtnText;
+            }
+        }
+
+        // ================ 认证 ================
+        let authMode = 'login';
+
+        function switchAuthTab(mode) {
+            authMode = mode;
+            const loginTab = document.getElementById('auth-tab-login');
+            const registerTab = document.getElementById('auth-tab-register');
+            const wordbookRow = document.getElementById('auth-wordbook-row');
+            const submit = document.getElementById('auth-submit');
+            const err = document.getElementById('auth-error');
+            err.classList.add('hidden');
+            if (mode === 'login') {
+                loginTab.className = 'flex-1 py-2.5 rounded-2xl bg-blue-600 text-white font-medium';
+                registerTab.className = 'flex-1 py-2.5 rounded-2xl bg-gray-100 text-gray-700 font-medium';
+                wordbookRow.classList.add('hidden');
+                submit.textContent = '登 录';
+            } else {
+                registerTab.className = 'flex-1 py-2.5 rounded-2xl bg-blue-600 text-white font-medium';
+                loginTab.className = 'flex-1 py-2.5 rounded-2xl bg-gray-100 text-gray-700 font-medium';
+                wordbookRow.classList.remove('hidden');
+                submit.textContent = '注 册';
+                populateWordbookSelect('auth-wordbook');
+            }
+        }
+
+        function showAuthError(msg) {
+            const box = document.getElementById('auth-error');
+            box.textContent = msg;
+            box.classList.remove('hidden');
+        }
+
+        async function doAuthSubmit() {
+            const username = document.getElementById('auth-username').value.trim();
+            const password = document.getElementById('auth-password').value;
+            if (!username || !password) { showAuthError('用户名和密码不能为空'); return; }
+            try {
+                let user;
+                if (authMode === 'login') {
+                    user = await api('/api/login', { method: 'POST', body: { username, password } });
+                } else {
+                    const wordbook_name = document.getElementById('auth-wordbook').value;
+                    user = await api('/api/register', { method: 'POST', body: { username, password, wordbook_name } });
+                }
+                await onAuthSuccess(user);
+            } catch (err) {
+                showAuthError(err.message || '请求失败');
+            }
+        }
+
+        async function doLogout() {
+            try { await api('/api/logout', { method: 'POST' }); } catch (e) {}
+            currentUser = null;
+            words = [];
+            showAuthOverlay();
+        }
+
+        function showAuthOverlay() {
+            document.getElementById('auth-overlay').classList.remove('hidden');
+            document.getElementById('user-bar').classList.add('hidden');
+            document.getElementById('user-bar').classList.remove('flex');
+            document.getElementById('cloud-indicator').classList.add('hidden');
+            document.getElementById('cloud-indicator').classList.remove('flex');
+            document.getElementById('auth-error').classList.add('hidden');
+            document.getElementById('auth-password').value = '';
+            switchAuthTab('login');
+        }
+
+        async function onAuthSuccess(user) {
+            currentUser = user;
+            document.getElementById('auth-overlay').classList.add('hidden');
+            document.getElementById('user-name').textContent = user.username;
+            document.getElementById('user-wordbook').textContent = user.wordbook_name || '';
+            document.getElementById('user-bar').classList.remove('hidden');
+            document.getElementById('user-bar').classList.add('flex');
+            document.getElementById('cloud-indicator').classList.remove('hidden');
+            document.getElementById('cloud-indicator').classList.add('flex');
+            await loadWordsFromServer();
+            await populateWordbookSelect('wordbook-select');
             renderWordList();
-            
-            // 默认打开引导学习频道
+            renderProgress();
             switchTab(0);
+        }
+
+        // ================ 初始化 ================
+        async function init() {
+            initSpeech();
+            try {
+                const me = await api('/api/me');
+                await onAuthSuccess(me);
+            } catch (err) {
+                showAuthOverlay();
+            }
+
+            const warmOnce = () => {
+                initSpeech();
+                window.removeEventListener('pointerdown', warmOnce);
+                window.removeEventListener('keydown', warmOnce);
+            };
+            window.addEventListener('pointerdown', warmOnce, { once: true });
+            window.addEventListener('keydown', warmOnce, { once: true });
         }
 
         window.onload = init;
